@@ -1,0 +1,32 @@
+# ---------------------------------------
+# Main Module
+# ---------------------------------------
+user nginx;
+
+# Set number of worker processes automatically based on number of CPU cores.
+worker_processes auto;
+worker_cpu_affinity auto;
+worker_rlimit_nofile {{ worker_rlimit_nofile }};
+thread_pool reactor threads={{ nginx_threads }} max_queue={{ thread_pool_max_queue }};
+pid /run/nginx.pid;
+
+# ---------------------------------------
+# Events Module
+# ---------------------------------------
+events {
+  # Determines how much clients will be served per worker
+  # max clients = worker_connections * worker_processes
+  # max clients is also limited by the number of socket connections available on the system (~64k)
+  worker_connections {{ worker_connections }};
+
+  # Accept as many connections as possible, may flood worker connections if set too low
+  multi_accept on;
+
+  # Optimized to serve many clients with each thread, essential for linux
+  use epoll;
+}
+
+# ---------------------------------------
+# Include configurations
+# ---------------------------------------
+include /etc/nginx/conf.d/*.conf;

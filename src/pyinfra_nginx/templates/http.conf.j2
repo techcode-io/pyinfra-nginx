@@ -1,0 +1,108 @@
+# ---------------------------------------
+# HTTP Core Module
+# ---------------------------------------
+http {
+  # Logging
+  log_format main escape=json '{ "timestamp": "$time_iso8601", '
+    '"request_id": "$request_id", '
+    '"is_pipeline": "$pipe", '
+    '"connection": $connection, '
+    '"connection_requests": $connection_requests, '
+    '"request_length": $request_length, '
+    '"request_time": $request_time, '
+    '"remote_addr": "$remote_addr", '
+    '"scheme": "$scheme", '
+    '"ssl_protocol": "$ssl_protocol", '
+    '"ssl_cipher": "$ssl_cipher", '
+    '"http_x_forwarded_for": "$http_x_forwarded_for", '
+    '"http_x_forwarded_proto": "$http_x_forwarded_proto", '
+    '"host": "$host", '
+    '"request": "$request", '
+    '"status": $status, '
+    '"body_bytes_sent": $body_bytes_sent, '
+    '"http_referrer": "$http_referer", '
+    '"http_user_agent": "$http_user_agent" }';
+
+  # Logging
+  access_log /var/log/nginx/access.log main;
+  error_log /var/log/nginx/error.log;
+
+  # Just For Security Reason
+  server_tokens {{ "on" if server_tokens else "off" }};
+  server_name_in_redirect {{ "on" if server_name_in_redirect else "off" }};
+  server_names_hash_max_size {{ server_names_hash_max_size }};
+  server_names_hash_bucket_size {{ server_names_hash_bucket_size }};
+
+  # Enable of asynchronous file I/O works on linux
+  aio {{ "threads=reactor" if aio else "off" }};
+  aio_write {{ "on" if aio_write else "off" }};
+
+  # Copies data between one FD and other from within the kernel
+  # faster then read() + write()
+  sendfile {{ "on" if sendfile else "off" }};
+
+  # Caps how much a single sendfile() call can send per worker iteration, so one connection
+  # streaming a large file can't monopolize a worker and starve other connections on it.
+  sendfile_max_chunk {{ sendfile_max_chunk }};
+
+  # Bypasses the OS page cache for files at or above this size (avoids double-buffering large
+  # files); paired with output_buffers, which sizes the buffers used to read them.
+  directio {{ directio }};
+  directio_alignment {{ directio_alignment }};
+  output_buffers {{ output_buffers }};
+
+  # Send headers in one peace, its better then sending them one by one
+  tcp_nopush {{ "on" if tcp_nopush else "off" }};
+
+  # Don't buffer data sent, good for small data bursts in real time
+  tcp_nodelay {{ "on" if tcp_nodelay else "off" }};
+
+  # Allow the server to close connection on non responding client, this will free up memory
+  reset_timedout_connection {{ "on" if reset_timedout_connection else "off" }};
+
+  # Nginx Simple DDoS Defense
+  client_body_buffer_size {{ client_body_buffer_size }};
+  client_body_timeout {{ client_body_timeout }};
+  client_header_buffer_size {{ client_header_buffer_size }};
+  client_header_timeout {{ client_header_timeout }};
+  client_max_body_size {{ client_max_body_size }};
+  keepalive_timeout {{ keepalive_timeout }};
+  large_client_header_buffers {{ large_client_header_buffers }};
+  send_timeout {{ send_timeout }};
+
+  # Mime settings
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+
+{% if cloudflare_ip_allowlist %}
+  # Defines $is_cloudflare_allowed (loopback + Cloudflare IP ranges) for vhosts that want to
+  # restrict access to Cloudflare-proxied traffic — see conf.d/allowed-traffic.include. This must
+  # live here (the `geo` directive is only valid at the http level, unlike
+  # `cloudflare-real-ip.include`'s directives, which are opt-in per vhost since they mutate
+  # $remote_addr for that vhost only).
+  include /etc/nginx/conf.d/allowed-traffic.include;
+{% endif %}
+
+  # File Cache
+  open_file_cache          max={{ open_file_cache_max }}  inactive={{ open_file_cache_inactive }};
+  open_file_cache_valid    {{ open_file_cache_valid }};
+  open_file_cache_min_uses {{ open_file_cache_min_uses }};
+  open_file_cache_errors   {{ "on" if open_file_cache_errors else "off" }};
+
+  # Gzip
+{% if gzip %}
+  gzip  on;
+  gzip_http_version 1.1;
+  gzip_vary on;
+  gzip_comp_level {{ gzip_comp_level }};
+  gzip_proxied any;
+  gzip_types {{ gzip_types|join(' ') }};
+  gzip_buffers {{ gzip_buffers }};
+  gzip_disable "MSIE [1-6]\.(?!.*SV1)";
+{% else %}
+  gzip off;
+{% endif %}
+
+  # Virtual Host Configs
+  include /etc/nginx/sites-enabled/*.conf;
+}

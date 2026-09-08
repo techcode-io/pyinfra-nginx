@@ -1,0 +1,78 @@
+{#
+  Example nginx vhost template demonstrating pyinfra-nginx's bundled Cloudflare helpers, for a
+  service that should ONLY be reachable through Cloudflare (eg an origin server with no public DNS
+  pointing anywhere else) — nginx itself becomes the enforcement point, on top of whatever
+  Cloudflare-side firewall rules you also have.
+
+  This file is NOT deployed by pyinfra-nginx — copy/adapt it into your own pyinfra project, then:
+
+    from pyinfra_nginx import add_vhost
+
+    from pyinfra_nginx import install
+
+    install(cloudflare_ip_allowlist=True)
+
+    add_vhost(
+        "example.com",
+        src="files/vhosts/example-cloudflare.conf.j2",
+        server_name="example.com",
+        upstream="127.0.0.1:8080",
+        ssl_certificate="/etc/ssl/certs/example.com.crt",
+        ssl_certificate_key="/etc/ssl/private/example.com.key",
+    )
+
+  Variables used below (all passed as `**context` to `add_vhost`): server_name, upstream,
+  ssl_certificate, ssl_certificate_key.
+
+  Two pieces work together here, both bundled/uploaded by pyinfra-nginx's install():
+  - conf.d/allowed-traffic.include — defines $is_cloudflare_allowed (1 for loopback and
+    Cloudflare's published IP ranges, 0 otherwise) via a `geo` block. Only uploaded, and only
+    included by pyinfra-nginx's own http.conf (geo is only valid at the http level), when
+    `install(cloudflare_ip_allowlist=True)` — off by default, since the base config is otherwise
+    CDN-agnostic. With it on, $is_cloudflare_allowed is available to every vhost automatically —
+    you don't include this file yourself.
+  - conf.d/cloudflare-real-ip.include — sets $remote_addr to the value of Cloudflare's
+    CF-Connecting-IP header (instead of Cloudflare's edge IP), and is opt-in per vhost (regardless
+    of `cloudflare_ip_allowlist`) since it's only safe to trust for traffic that's actually
+    restricted to Cloudflare, like this vhost.
+#}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ server_name }};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{ server_name }};
+    http2 on;
+
+    ssl_certificate {{ ssl_certificate }};
+    ssl_certificate_key {{ ssl_certificate_key }};
+    ssl_protocols TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+
+    include /etc/nginx/conf.d/cloudflare-real-ip.include;
+
+    if ($is_cloudflare_allowed != 1) {
+        return 403;
+    }
+
+    # Security headers.
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://{{ upstream }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

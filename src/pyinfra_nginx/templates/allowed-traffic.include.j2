@@ -1,0 +1,19 @@
+# Allow Cloudflare and loopback traffic
+# Ref: https://www.cloudflare.com/ips/
+geo $realip_remote_addr $is_cloudflare_allowed {
+  default 0;
+
+  # Loopback
+  127.0.0.1 1;
+  ::1 1;
+
+  # Cloudflare ipv4
+  {{ cloudflare_ipv4_ranges | join(" 1;\n  ") }} 1;
+
+  # Cloudflare ipv6
+  {{ cloudflare_ipv6_ranges | join(" 1;\n  ") }} 1;
+{% if extra_cidrs %}
+  # Extra (cloudflare_ip_allowlist_extra_cidrs)
+  {{ extra_cidrs | join(" 1;\n  ") }} 1;
+{% endif %}
+}
