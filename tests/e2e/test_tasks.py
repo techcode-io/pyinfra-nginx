@@ -160,3 +160,41 @@ def test_add_vhost_then_remove_vhost(systemd_container: str) -> None:
     assert uninstall_result.returncode == 0, (
         uninstall_result.stdout + uninstall_result.stderr
     )
+
+
+def test_add_vhost_migrates_stale_non_symlink_file(systemd_container: str) -> None:
+    """
+    A host previously managed by the pre-symlink runbook (or an older version of this package)
+    wrote the vhost straight into sites-enabled/ as a regular file, not a symlink. add_vhost()
+    must migrate it rather than fail (pyinfra's files.link refuses to replace a non-symlink path).
+    """
+    install_result = run_pyinfra(systemd_container, "tasks_install.py")
+    assert install_result.returncode == 0, install_result.stdout + install_result.stderr
+
+    assert_podman_exec(
+        systemd_container,
+        "mkdir -p /etc/nginx/sites-enabled && "
+        "echo 'server {}' > /etc/nginx/sites-enabled/example.conf",
+    )
+    assert_podman_exec(
+        systemd_container, "test -f /etc/nginx/sites-enabled/example.conf"
+    )
+    assert_podman_exec(
+        systemd_container, "test -L /etc/nginx/sites-enabled/example.conf", expected=1
+    )
+
+    add_result = run_pyinfra(systemd_container, "tasks_add_vhost.py")
+    assert add_result.returncode == 0, add_result.stdout + add_result.stderr
+
+    assert_podman_exec(
+        systemd_container, "test -L /etc/nginx/sites-enabled/example.conf"
+    )
+    assert_podman_exec(systemd_container, "nginx -t")
+
+    remove_result = run_pyinfra(systemd_container, "tasks_remove_vhost.py")
+    assert remove_result.returncode == 0, remove_result.stdout + remove_result.stderr
+
+    uninstall_result = run_pyinfra(systemd_container, "tasks_uninstall.py")
+    assert uninstall_result.returncode == 0, (
+        uninstall_result.stdout + uninstall_result.stderr
+    )

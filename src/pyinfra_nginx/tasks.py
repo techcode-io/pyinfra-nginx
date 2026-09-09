@@ -156,6 +156,17 @@ def add_vhost(name: str, src: str | Path, **context: Any) -> None:
         **context,
     )
 
+    enabled_path = f"{SITES_ENABLED_DIR}/{name}.conf"
+    if host.get_fact(File, enabled_path):
+        # A host previously managed by the pre-symlink runbook (or an older version of this
+        # package) wrote the vhost directly into sites-enabled/ as a regular file. files.link
+        # refuses to replace a non-symlink path, so migrate it out of the way first.
+        files.file(
+            name=f"Remove stale non-symlink vhost file (pre-symlink migration): {name}",
+            path=enabled_path,
+            present=False,
+        )
+
     link = files.link(
         name=f"Enable nginx vhost: {name}",
         path=f"{SITES_ENABLED_DIR}/{name}.conf",
