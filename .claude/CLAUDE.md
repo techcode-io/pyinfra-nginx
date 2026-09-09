@@ -60,6 +60,12 @@ Source lives under `src/pyinfra_nginx/` (src layout, `uv_build` backend):
     (including the catch-all one) — this library doesn't own that state by convention, and a
     caller may still want it around (eg to reinstall later, or because another process manages
     those vhosts).
+    **Ordering matters**: the `conf.d/default.conf`/`modules` cleanup must run *before*
+    `add_vhost()`'s catch-all render — the Debian package's stock `default.conf` fails
+    `nginx -t`, so any reload attempted before cleanup (including add_vhost's own conditional
+    reload) breaks the whole deploy. **Never `apt.packages(purge=True)` on uninstall** — the
+    nginx.org package's `postrm purge` script runs `rm -rf /etc/nginx`, which would violate the
+    no-vhost-deletion guarantee above.
   - **`add_vhost(name, src, **context)` / `remove_vhost(name)`**: the reusable primitive this
     whole package exists to provide. There is no precedent for this anywhere in the org
     (`pyinfra-alertmanager`/`pyinfra-victoria-metrics` both push all "multi-entry config" out to a
@@ -174,6 +180,17 @@ absent — `_podman_available()` returns `False` either way and the module just 
 `subprocess.run` calls where `check=` is supplied dynamically through `**kwargs` (see
 `direct_bind()` in `tests/e2e/conftest.py`) need `# noqa: PLW1510` — ruff can't verify it
 statically.
+
+`dpkg -s <pkg>` still exits 0 for a package in "removed, config remains" (`rc`) state — assert
+package removal via `dpkg-query -W -f='${Status}' <pkg> | grep -q ' installed$'` (expect no match)
+instead.
+
+**Faster than the full pytest fixture** when iterating on a template/config change: build the
+image once and run a scratch container by hand (`podman build`/`run` per `Containerfile`), then
+`uv run pyinfra -y @podman/<container> tests/fixtures/tasks_install.py` + `podman exec
+<container> nginx -t` / `cat <file>` to inspect — skips the fixture's per-test image rebuild and
+full install→uninstall→add_vhost sequence. For pure Jinja logic/whitespace bugs, skip pyinfra
+entirely and render the `.j2` file directly: `uv run python -c "import jinja2; ..."`.
 
 ## Conventions
 
