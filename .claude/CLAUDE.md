@@ -199,8 +199,9 @@ entirely and render the `.j2` file directly: `uv run python -c "import jinja2; .
   (`pyinfra-alertmanager`, `pyinfra-node-exporter`) — check those before inventing new structure or
   wording. Two things are intentionally *not* copied here: `scripts/project.py` and
   `.github/workflows/dependabot-plus-plus.yml` (both exist solely to bump a pinned upstream
-  version, which this repo doesn't have) and `.github/workflows/setup-github-bot/action.yml`
-  (its only consumer was that workflow).
+  version, which this repo doesn't have).
+- Third-party GitHub Actions are referenced through the `techcode-io/github-actions` proxies
+  (e.g. `techcode-io/github-actions/setup-uv@setup-uv/v1`), never directly.
 - Commit titles must satisfy `.gitlint`: `type: subject` where type is one of
   `build|ci|docs|feat|fix|perf|refactor|test|chore|release`, 5-80 chars total; enforced by the
   commit-msg pre-commit hook.
